@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 """
-  ffpassdecrypt - Decode the passwords stored using Firefox browser. The script currently works only on Linux.
+  ffpassdecrypt - Decode the passwords stored using Firefox browser with wordlist. The script currently works only on Linux.
 
   Author : Pradeep Nayak (pradeep1288@gmail.com)
-  usage: ./ffpassdecrypt.py [paths_to_location_of_files]
+  usage: ./ffpassdecrypt.py -P [path_to_wordlist] [paths_to_location_of_files]
 
-  Run it with no parameters to extract the standard passwords from all profiles of the current logged in user,
-  or with an optional '-P' argument (before any path) to query the master password for decryption.
 
   Required files:
      + key3.db
@@ -121,40 +119,49 @@ def decrypt(val, libnss, pwdata):
 
 
 # reads the signons.sqlite which is a sqlite3 Database (>Firefox 3)
-def readsignonDB(userpath, dbname, pw, libnss):
-	print "\nDatabase %s" % dbname
-        dbpath = os.path.join(userpath, dbname)
+def readsignonDB(userpath, dbname, passlist, libnss):
+	for x,pw in enumerate(passlist):
+		pw=pw.strip()
+		done = False
+		# print "\nDatabase %s" % dbname
+	        dbpath = os.path.join(userpath, dbname)
 
-	keySlot = libnss.PK11_GetInternalKeySlot()
-	libnss.PK11_CheckUserPassword(keySlot, pw)
-	libnss.PK11_Authenticate(keySlot, True, 0)
+		keySlot = libnss.PK11_GetInternalKeySlot()
+		libnss.PK11_CheckUserPassword(keySlot, pw)
+		libnss.PK11_Authenticate(keySlot, True, 0)
 
-	pwdata = secuPWData()
-	pwdata.source = PW_NONE
-	pwdata.data = 0
+		pwdata = secuPWData()
+		pwdata.source = PW_NONE
+		pwdata.data = 0
 
-	ext = dbname.split('.')[-1]
-	if ext == 'sqlite':
-		db = SQLiteLogins(dbpath)
-	elif ext == 'json':
-		db = JSONLogins(dbpath)
+		ext = dbname.split('.')[-1]
+		if ext == 'sqlite':
+			db = SQLiteLogins(dbpath)
+		elif ext == 'json':
+			db = JSONLogins(dbpath)
 
-	for rec in db:
-		print "--Site(%s):" % rec['hostname']
+		for rec in db:
+			for item in ['Username', 'Password']:
+				clr = decrypt(rec['encrypted%s' % item], libnss, pwdata)
+				if clr is None:
+					pass
 
-		for item in ['Username', 'Password']:
-			clr = decrypt(rec['encrypted%s' % item], libnss, pwdata)
-			if clr is None:
-				errorlog(rec, dbpath, libnss)
-			else:
-				print "----%s %s" % (item, clr)
+				else:
+
+					print "----%s %s" % (item, clr)
+
+					done = True
 
 
-		# Additional items from the JSON database
+		if done:
 
-		for item in ['timeCreated', 'timeLastUsed', 'timePasswordChanged']:
-			if item in rec:
-				print "----%s %s" % (item, time.strftime("%Y-%m-%dT%H:%M:%S",time.localtime((rec[item]) / 1000)))
+			print "--Site(%s) - Pass=%s" % (rec['hostname'],pw)
+			break
+			# Additional items from the JSON database
+
+			# for item in ['timeCreated', 'timeLastUsed', 'timePasswordChanged']:
+			# 	if item in rec:
+			# 		print "----%s %s" % (item, time.strftime("%Y-%m-%dT%H:%M:%S",time.localtime((rec[item]) / 1000)))
 
 
 class LibNSS(object):
@@ -181,15 +188,16 @@ def main():
 		sys.exit(2)
 
 
-	if len(args)==0:
+	if len(args)==1:
 		ordner = findpath_userdirs()
 	else:
-		ordner=args
+		ordner=args[1]
 
 	use_pass = False
 	for o, a in optlist:
 		if o == '-P':
 			use_pass = True
+			wordlist = args[0]
 
 	# Load the libnss3 linked file
 	libnss = CDLL(find_library("nss3"))
@@ -199,18 +207,34 @@ def main():
 	libnss.PK11_GetInternalKeySlot.restype = c_void_p
 	libnss.PK11_CheckUserPassword.argtypes = [c_void_p, c_char_p]
 	libnss.PK11_Authenticate.argtypes = [c_void_p, c_int, c_void_p]
+	# wordlist = getpass.getpass() if use_pass else ""
+	with open(wordlist) as f:
+		passlist = f.readlines()
 
-	for user in ordner:
-		print "Dirname: %s"%os.path.split(user)[-1]
+		for user in ordner:
+			print "Dirname: %s"%os.path.split(user)[-1]
 
-		signonfiles = glob.glob(os.path.join(user, 'signons*.sqlite')) + \
-			[os.path.join(user, 'logins.json')]
+			signonfiles = glob.glob(os.path.join(user, 'signons*.sqlite')) + \
+				[os.path.join(user, 'logins.json')]
 
-		pw = getpass.getpass() if use_pass else ""
-		with LibNSS(libnss, user):
-			for signonfile in signonfiles:
-				(filepath,filename) = os.path.split(signonfile)
-				readsignonDB(filepath, filename, pw, libnss)
+			# pw = getpass.getpass() if use_pass else ""
+			with LibNSS(libnss, user):
+				for signonfile in signonfiles:
+					(filepath,filename) = os.path.split(signonfile)
+					readsignonDB(filepath, filename, passlist, libnss)
+
+
+		# for user in ordner:
+		# 	print "Dirname: %s"%os.path.split(user)[-1]
+
+		# 	signonfiles = glob.glob(os.path.join(user, 'signons*.sqlite')) + \
+		# 		[os.path.join(user, 'logins.json')]
+
+		# 	pw = getpass.getpass() if use_pass else ""
+		# 	with LibNSS(libnss, user):
+		# 		for signonfile in signonfiles:
+		# 			(filepath,filename) = os.path.split(signonfile)
+		# 			readsignonDB(filepath, filename, pw, libnss)
 
 if __name__ == '__main__':
 	main()
