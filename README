@@ -1,4 +1,4 @@
- ffpassdecrypt - Decode the passwords stored using Firefox browser with wordlist    . The script currently works only on Linux.
+ ffpassdecrypt - Decode the passwords stored using Firefox browser with wordlist. The script currently works only on Linux.
 
   Author : Pradeep Nayak (pradeep1288@gmail.com)
   usage: ./ffpassdecrypt.py -P [path_to_wordlist] [paths_to_location_of_files]
